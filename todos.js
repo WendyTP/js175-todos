@@ -1,8 +1,10 @@
 const express = require("express");
 const morgan = require("morgan");
-const flash = require("express-flash");
-const session = require("express-session");
+const flash = require("express-flash");  // flash messages
+const session = require("express-session");  // required by express-flash -> store flash messages (provide support ofr persisting data)
+const { body, validationResult } = require("express-validator");
 const TodoList = require("./lib/todolist");
+const {sortTodoLists, sortTodos} = require("./lib/sort");
 
 const app = express();
 const host = "localhost";
@@ -17,12 +19,14 @@ app.set("view engine", "pug");
 app.use(morgan("common"));
 app.use(express.static("public"));
 app.use(express.urlencoded({ extended: false}));
+
 app.use(session({
   name: "launch-school-todos-session-id",
   resave: false,
   saveUninitialized: true,
   secret: "this is not very secure",
 }));
+
 app.use(flash());
 
 app.use((req, res, next) => {
@@ -31,29 +35,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// return the list of todo lists sorted by completion status and title.
-const sortTodoLists = function(lists) {
-  let undoneLists = lists.filter(todoList => !todoList.isDone());
-  let doneLists = lists.filter(todoList => todoList.isDone());
 
-  undoneLists.sort(sortByTitle);
-  doneLists.sort(sortByTitle);
-  return [].concat(undoneLists,doneLists);
-}
 
-// Compare todo list titles alphabetically
-const sortByTitle = function(todoListA, todoListB) {
-  let titleA = todoListA.title.toLowerCase();
-  let titleB = todoListB.title.toLowerCase();
-
-  if (titleA < titleB) {
-    return -1;
-  } else if (titleA > titleB) {
-    return 1;
-  } else {
-    return 0;
-  }
+//
+const findTodoList = function(todoListId) {
+  return todoLists.find(todoList => {
+    return Number(todoList.id) === Number(todoListId)
+  });
 };
+
+
 
 
 app.get("/", (req, res) => {
@@ -70,33 +61,57 @@ app.get("/lists", (req, res) => {
   res.redirect("/");
 });
 
-app.post("/lists", (req, res) => {
-  // validate input
-  let title = req.body.todoListTitle.trim();
-  if (title.length === 0) {
-    req.flash("error", "A title was not provided.");
-    res.render("new-list", {
-      flash: req.flash(),
-    });
-  } else if (title.length > 100) {
-    req.flash("error", "List title must be between 1 and 100 characters.");
-    res.render("new-list", {
-      flash: req.flash(),
-      todoListTitle: req.body.todoListTitle,
-    });
-  } else if (todoLists.some(list => list.title === title)) {
-    req.flash("error", "List title must be unique.");
-    req.flash("error", "This is another error.");
-    req.flash("error", "Here is still another error.");
-    res.render("new-list", {
-      flash: req.flash(),
-      todoListTitle: title,
-    });
+// Render individual todo list and its todos
+app.get("/lists/:todoListId", (req, res, next) => {
+  let listId = req.params.todoListId;
+  let todoList = findTodoList(listId);
+  if (todoList === undefined) {
+    next(new Error("Not found."));
   } else {
-    todoLists.push(new TodoList(title));
-    req.flash("success", "The todo list has been created.");
-    res.redirect("/");
+    res.render("list", {
+      todoList: todoList,
+      todos: sortTodos(todoList),
+    });
   }
+});
+
+
+app.post("/lists", 
+  // validate input
+  [
+    body("todoListTitle")
+      .trim()
+      .isLength({min: 1})
+      .withMessage("The list title is required")
+      .isLength({max: 100})
+      .withMessage("List title must be between 1 and 100 characters.")
+      .custom(title => {
+        let duplicate = todoLists.find(list => list.title === title);
+        return duplicate === undefined;
+      })
+      .withMessage("List title must be unique."),
+  ],
+
+  (req, res) => {
+    let errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      errors.array().forEach(message => req.flash("error", message.msg));
+      res.render("new-list", {
+        flash: req.flash(),
+        todoListTitle: req.body.todoListTitle,
+      });
+    } else {
+      todoLists.push(new TodoList(req.body.todoListTitle));
+      req.flash("success", "The todo list has been created.");
+      res.redirect("/");
+    }
+  }
+);
+
+// Error handler middleware (not flash errors message)
+app.use((err, req, res, _next) => {
+  console.log(err); //Writes more extensive information to the console log
+  res.status(404).send(err.message);
 });
 
 // Listener
