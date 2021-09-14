@@ -37,16 +37,24 @@ app.use((req, res, next) => {
 
 
 
-//
+
+//////////////////////////////////////////////////////// function
 const findTodoList = function(todoListId) {
   return todoLists.find(todoList => {
     return Number(todoList.id) === Number(todoListId)
   });
 };
 
+const findTodo = function(todoList, todoId) {
+  if (todoList === undefined) {
+    return undefined;
+  } else {
+    return todoList.findById(Number(todoId));
+  }
+}
 
 
-
+/////////////////////////////////////////////////////////// routes
 app.get("/", (req, res) => {
   res.render("lists", {
     todoLists: sortTodoLists(todoLists),
@@ -107,6 +115,59 @@ app.post("/lists",
     }
   }
 );
+
+app.post("/lists/:todoListId/todos/:todoId/toggle", (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoId = req.params.todoId;
+  
+  let todoList = findTodoList(todoListId);
+  let todo = findTodo(todoList, todoId);
+
+  if (!todo) {
+    next(new Error("Not found."));
+  } else {
+    let todoTitle = todo.title;
+    if (todo.isDone()) {
+      todo.markUndone();
+      req.flash("success", `${todoTitle} marked as NOT done!`)
+    } else {
+      todo.markDone();
+      req.flash("success", `${todoTitle} marked as done!`);
+    }
+
+    res.redirect(`/lists/${todoListId}`);
+  }
+});
+
+app.post("/lists/:todoList.id/todos/:todo.id/destroy", (req, res,next) => {
+  let {todoListId, todoId} = {...req.params};
+  let todoList = findTodoList(todoListId);
+  let todo = findTodo(todoList, todoId);
+
+  if (!todo) {
+    next(new Error("Not found."));
+  } else {
+    let todoTitle = todo.title;
+    let todoIdx = todoList.findIndexOf(todo);
+    todoList.removeAt(todoIdx);
+    
+    req.flash("success", `${todoTitle} is deleted.`);
+    res.redirect(`/lists/${todoListId}`);
+  }
+});
+
+app.post("/lists/:todoListId/complete_all", (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoList = findTodoList(todoListId);
+
+  if (!todoList) {
+    next(new Error("Not found."));
+  } else {
+    todoList.markAllDone();
+    req.flash("success", `All todos have been marked as done.`);
+    req.redirect(`/lists/${todoListId}`);
+  }
+});
 
 // Error handler middleware (not flash errors message)
 app.use((err, req, res, _next) => {
