@@ -4,6 +4,7 @@ const flash = require("express-flash");  // flash messages
 const session = require("express-session");  // required by express-flash -> store flash messages (provide support ofr persisting data)
 const { body, validationResult } = require("express-validator");
 const TodoList = require("./lib/todolist");
+const Todo = require("./lib/todo");
 const {sortTodoLists, sortTodos} = require("./lib/sort");
 
 const app = express();
@@ -168,6 +169,114 @@ app.post("/lists/:todoListId/complete_all", (req, res, next) => {
     req.redirect(`/lists/${todoListId}`);
   }
 });
+
+app.post("/lists/:todoListId/todos", 
+    // validate input
+  [
+    body("todoTitle")
+      .trim()
+      .isLength({min: 1})
+      .withMessage("The todo title is required.")
+      .isLength({max: 100})
+      .withMessage("Todo title must be between 1 and 100 characters.")
+  ],
+
+  (req, res, next) => {
+   
+    let todoListId = req.params.todoListId;
+    let todoList = findTodoList(todoListId);
+
+    if (!todoList) {
+      next(new Error("Not found."));
+    } else {
+      let errors = validationResult(req);
+
+      if (!errors.isEmpty()) {
+        errors.array().forEach(message => req.flash("error", message.msg));
+        
+        res.render("list", {
+          flash: req.flash(),
+          todoList: todoList,
+          todos: sortTodos(todoList),
+          todoTitle: req.body.todoTitle,
+        });
+      } else {
+        todoList.add(new Todo(req.body.todoTitle));
+        req.flash("success", "The todo has been created.");
+        req.redirect(`/lists/${todoListId}`);
+      }
+    }
+  }
+);
+
+// Render edit todo list form
+app.get("/lists/:todoListId/edit", (req, res, next) => {
+  let listId = req.params.todoListId;
+  let todoList = findTodoList(listId);
+  if (todoList === undefined) {
+    next(new Error("Not found."));
+  } else {
+    res.render("edit-list", {
+      todoList: todoList,
+    });
+  }
+});
+
+// delete todo List
+app.post("/lists/:todoListId/destroy", (req, res, next) => {
+  let todoListId = req.params.todoListId;
+  let todoListTitle = todoList.title;
+  let todoListIdx = todoLists.findIndex(todoList => todoList.id === todoListId);
+  
+  if (todoListIdx === -1) {
+    next(new Error("Not found."));
+  } else {
+    todoLists.splice(todoListIdx, 1);
+    req.flash("success", `${todoListTitle} is deleted.`);
+    res.redirect("/lists");
+  }
+});
+
+// edit todo list title
+app.post("/lists/:todoListId/edit",
+  [
+    body("todoListTitle")
+      .trim()
+      .isLength({min: 1})
+      .withMessage("The list title is required")
+      .isLength({max: 100})
+      .withMessage("List title must be between 1 and 100 characters.")
+      .custom(title => {
+        let duplicate = todoLists.find(list => list.title === title);
+        return duplicate === undefined;
+      })
+      .withMessage("List title must be unique."),
+  ],
+
+  (req, res, next) => {
+    let todoListId = req.params.todoListId;
+    let todoList = findTodoList(todoListId);
+
+    if (!todoList) {
+      next(new Error("Not found."));
+    } else {
+      let errors = validationResult(req);
+
+      if (!errors.isEmpty()) {
+        errors.array().forEach(message => req.flash("error", message.msg));
+        
+        res.render("edit-list", {
+          flash: req.flash(),
+          todoList: todoList,
+          todoListTitle: req.body.todoListTitle,
+        });
+      } else {
+        todoList.setTitle(req.body.todoListTitle);
+        req.flash("success", "The todo list title has been edited.");
+        req.redirect(`/lists/${todoListId}`);
+      }
+  }
+);
 
 // Error handler middleware (not flash errors message)
 app.use((err, req, res, _next) => {
