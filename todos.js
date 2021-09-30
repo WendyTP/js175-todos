@@ -6,6 +6,8 @@ const { body, validationResult } = require("express-validator");
 const TodoList = require("./lib/todolist");
 const Todo = require("./lib/todo");
 const {sortTodoLists, sortTodos} = require("./lib/sort");
+const store = require("connect-loki"); 
+
 
 const app = express();
 const host = "localhost";
@@ -22,10 +24,18 @@ app.use(express.static("public"));
 app.use(express.urlencoded({ extended: false}));
 
 app.use(session({
+  cookie: {
+    httpOnly: true,
+    maxAge: 31 * 24 * 60 * 60 * 1000, // 31 days in miliseconds
+    path: "/",
+    secure: false,
+  },
+
   name: "launch-school-todos-session-id",
   resave: false,
   saveUninitialized: true,
   secret: "this is not very secure",
+  store: new LokiStore({}), // tell express-session to use connect-loki as the store
 }));
 
 app.use(flash());
@@ -270,13 +280,14 @@ app.post("/lists/:todoListId/edit",
           todoList: todoList,
           todoListTitle: req.body.todoListTitle,
         });
+
       } else {
         todoList.setTitle(req.body.todoListTitle);
         req.flash("success", "The todo list title has been edited.");
         req.redirect(`/lists/${todoListId}`);
       }
-  }
-);
+    }
+  });
 
 // Error handler middleware (not flash errors message)
 app.use((err, req, res, _next) => {
